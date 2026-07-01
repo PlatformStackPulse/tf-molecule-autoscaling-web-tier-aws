@@ -3,9 +3,43 @@
 [![CI](https://github.com/PlatformStackPulse/tf-molecule-autoscaling-web-tier-aws/actions/workflows/ci.yml/badge.svg)](https://github.com/PlatformStackPulse/tf-molecule-autoscaling-web-tier-aws/actions/workflows/ci.yml)
 ![Terraform](https://img.shields.io/badge/terraform-%3E%3D1.6.0-blueviolet)
 
-## Purpose
+Terraform molecule that provisions an auto-scaled web tier on AWS: an EC2 launch template, an Auto Scaling Group across your private subnets, and an optional target-tracking scaling policy — all named and tagged consistently via [tf-label](https://github.com/PlatformStackPulse/tf-label).
 
-Terraform molecule: Auto-scaled web tier with launch template, ASG, and target-tracking scaling policy.
+## Features
+
+- **Launch template** — image, instance type, root volume, optional SSH key, IAM instance profile, and base64 user data, with public IPs disabled by default.
+- **Auto Scaling Group** — spread across the supplied private subnets with configurable `min`/`max`/`desired` capacity.
+- **ELB-aware health checks** — automatically switches to `ELB` health checks when `target_group_arns` are supplied, otherwise `EC2`.
+- **Target-tracking scaling policy** — optional (`scaling_policy_enabled`), supporting `ASGAverageCPUUtilization` or `ALBRequestCountPerTarget` with a configurable target value.
+- **Consistent naming & tagging** — every resource derives its name and tags from tf-label; set `enabled = false` to disable the entire molecule.
+
+## Usage
+
+```hcl
+module "web_tier" {
+  source = "git::https://github.com/PlatformStackPulse/tf-molecule-autoscaling-web-tier-aws.git?ref=v1.0.0"
+
+  namespace = "eg"
+  stage     = "prod"
+  name      = "web"
+
+  # Required
+  ami_id             = "ami-0abcdef1234567890"
+  subnet_ids         = ["subnet-0aaaa1111bbbb2222", "subnet-0cccc3333dddd4444"]
+  security_group_ids = ["sg-0abc123def4567890"]
+
+  # Optional
+  instance_type     = "t3.small"
+  min_size          = 2
+  max_size          = 6
+  desired_capacity  = 2
+  target_group_arns = ["arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/web/0123456789abcdef"]
+
+  scaling_policy_enabled = true
+  scaling_metric_type    = "ASGAverageCPUUtilization"
+  scaling_target_value   = 70
+}
+```
 
 ## Module Documentation
 
@@ -80,3 +114,20 @@ No resources.
 | <a name="output_launch_template_id"></a> [launch\_template\_id](#output\_launch\_template\_id) | ID of the launch template |
 | <a name="output_launch_template_latest_version"></a> [launch\_template\_latest\_version](#output\_launch\_template\_latest\_version) | Latest version of the launch template |
 <!-- END_TF_DOCS -->
+
+## Tests
+
+Unit tests use a mock AWS provider — no credentials and no real AWS calls — and assert on values known at `terraform plan` time (tf-label IDs, context pass-throughs, and the enabled/disabled toggle).
+
+```bash
+make test                                   # runs the unit suite
+# or directly:
+terraform init -backend=false
+terraform test -test-directory=tests/unit
+```
+
+Integration tests (which provision real infrastructure and require AWS credentials) live under `tests/integration` and run with:
+
+```bash
+terraform test -test-directory=tests/integration
+```
